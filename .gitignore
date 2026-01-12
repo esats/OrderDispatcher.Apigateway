@@ -1,0 +1,90 @@
+############################
+# .NET / C#
+############################
+bin/
+obj/
+out/
+
+############################
+# Build results
+############################
+[Bb]uild/
+[Dd]ebug*/
+[Rr]elease*/
+x64/
+x86/
+arm/
+arm64/
+
+############################
+# Visual Studio
+############################
+.vs/
+*.user
+*.rsuser
+*.suo
+*.userosscache
+*.sln.docstates
+
+############################
+# Visual Studio Code
+############################
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+############################
+# Rider / JetBrains
+############################
+.idea/
+*.sln.iml
+
+############################
+# NuGet
+############################
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+
+############################
+# Logs
+############################
+*.log
+
+############################
+# Test results
+############################
+TestResults/
+coverage/
+coverage.cobertura.xml
+*.coverage
+*.coveragexml
+
+############################
+# Secrets (safe to ignore, does NOT affect appsettings)
+############################
+secrets.json
+*.pfx
+*.cer
+*.key
+
+############################
+# OS files
+############################
+.DS_Store
+Thumbs.db
+
+############################
+# Publish output
+############################
+publish/
+wwwroot/lib/
+
+############################
+# Tools
+############################
+_ReSharper*/
+*.DotSettings.user
