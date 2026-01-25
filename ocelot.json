@@ -43,25 +43,46 @@
       }
     },
     {
-     "DownstreamPathTemplate": "/{everything}",
-     "DownstreamScheme": "http",
-     "DownstreamHostAndPorts": [
-       {
-         "Host": "localhost",
-         "Port": 5050
-       }
-     ],
-     "UpstreamPathTemplate": "/file-processor/{everything}",
-     "UpstreamHttpMethod": [
-       "GET",
-       "POST",
-       "PUT",
-       "DELETE"
-     ],
-     "AuthenticationOptions": {
-       "AuthenticationProviderKey": "GatewayAuth",
-       "AllowedScopes": []
-     }
+      "DownstreamPathTemplate": "/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "localhost",
+          "Port": 5050
+        }
+      ],
+      "UpstreamPathTemplate": "/file-processor/{everything}",
+      "UpstreamHttpMethod": [
+        "GET",
+        "POST",
+        "PUT",
+        "DELETE"
+      ],
+      "AuthenticationOptions": {
+        "AuthenticationProviderKey": "GatewayAuth",
+        "AllowedScopes": []
+      }
+    },
+    {
+      "DownstreamPathTemplate": "/api/engagement/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "localhost",
+          "Port": 5212
+        }
+      ],
+      "UpstreamPathTemplate": "/engagement/{everything}",
+      "UpstreamHttpMethod": [
+        "GET",
+        "POST",
+        "PUT",
+        "DELETE"
+      ],
+      "AuthenticationOptions": {
+        "AuthenticationProviderKey": "GatewayAuth",
+        "AllowedScopes": []
+      }
     }
   ],
   "GlobalConfiguration": {
