@@ -29,11 +29,3 @@ public sealed class StoreWithImagesDto
     public int ImageMasterId { get; set; }
     public string[] ImageUrls { get; set; } = Array.Empty<string>();
 }
-
-public sealed class ImageMasterDto
-{
-    public int MasterId { get; set; }
-    public string[] ImageUrls { get; set; } = Array.Empty<string>();
-}
-
-public sealed record ImagesByIdsRequest(IReadOnlyList<int> MasterIds);

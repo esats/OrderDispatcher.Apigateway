@@ -13,7 +13,107 @@ public static class AggregateActions
             aggregateApp.Run(AggregateStoresWithImages);
         });
 
+
+        app.Map("/aggregate/catalog/products-with-images", aggregateApp =>
+        {
+            aggregateApp.Run(AggregateProductWithImages);
+        });
+
         return app;
+    }
+
+    private static async Task AggregateProductWithImages(HttpContext context)
+    {
+        if (!HttpMethods.IsGet(context.Request.Method))
+        {
+            context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+            return;
+        }
+
+        if (context.User?.Identity?.IsAuthenticated != true)
+        {
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            return;
+        }
+
+        var jsonOptions = new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            PropertyNameCaseInsensitive = true
+        };
+
+        var services = context.RequestServices;
+        var httpClientFactory = services.GetRequiredService<IHttpClientFactory>();
+        var config = services.GetRequiredService<IConfiguration>();
+
+        var catalogClient = httpClientFactory.CreateClient("CatalogService");
+        var productPath = config["CatalogService:ProductPath"];
+        using var catalogRequest = new HttpRequestMessage(HttpMethod.Get, productPath);
+
+        if (context.Request.Headers.TryGetValue("Authorization", out var authHeader))
+        {
+            catalogRequest.Headers.TryAddWithoutValidation("Authorization", authHeader.ToString());
+        }
+
+        using var catalogResponse = await catalogClient.SendAsync(catalogRequest, context.RequestAborted);
+        if (!catalogResponse.IsSuccessStatusCode)
+        {
+            context.Response.StatusCode = (int)catalogResponse.StatusCode;
+            return;
+        }
+
+        var productJson = await catalogResponse.Content.ReadAsStringAsync(context.RequestAborted);
+
+        var products = JsonSerializer.Deserialize<List<ProductDto>>(productJson);
+
+        var masterIds = products?
+            .Select(s => s.ImageMasterId)
+            .Where(id => id > 0)
+            .Distinct()
+            .ToArray();
+
+        var imageMap = new Dictionary<int, string[]>();
+        if (masterIds?.Length > 0)
+        {
+            var fileClient = httpClientFactory.CreateClient("FileService");
+            var filePath = config["FileService:ImagesByMasterIdsPath"] ?? "/images/getByMasterIds";
+            using var fileRequest = new HttpRequestMessage(HttpMethod.Post, filePath)
+            {
+                Content = JsonContent.Create(new ImagesByIdsRequest(masterIds), options: jsonOptions)
+            };
+
+            if (context.Request.Headers.TryGetValue("Authorization", out authHeader))
+            {
+                fileRequest.Headers.TryAddWithoutValidation("Authorization", authHeader.ToString());
+            }
+
+            using var fileResponse = await fileClient.SendAsync(fileRequest, context.RequestAborted);
+            if (fileResponse.IsSuccessStatusCode)
+            {
+                var imageItems = await fileResponse.Content.ReadFromJsonAsync<List<ImageMasterDto>>(jsonOptions, context.RequestAborted)
+                                 ?? new List<ImageMasterDto>();
+                imageMap = imageItems.ToDictionary(x => x.MasterId, x => x.ImageUrls);
+            }
+        }
+
+        var result = products?.Select(product => new ProductDto
+        {
+            Id = product.Id,
+            Name = product.Name,
+            Description = product.Description,
+            Price = product.Price,
+            Stock = product.Stock,
+            Order = product.Order,
+            BrandId = product.BrandId,
+            CategoryId = product.CategoryId,
+            ImageMasterId = product.ImageMasterId,
+            ImageUrls = imageMap.TryGetValue(product.ImageMasterId, out var urls)
+                ? urls
+                : Array.Empty<string>()
+        });
+
+        context.Response.StatusCode = StatusCodes.Status200OK;
+        await context.Response.WriteAsJsonAsync(result, jsonOptions, context.RequestAborted);
     }
 
     private static async Task AggregateStoresWithImages(HttpContext context)
