@@ -8,6 +8,7 @@ namespace OrderDispatcher.Apigateway;
 
 public static class AggregateActions
 {
+    private const string AuthorizationHeader = "Authorization";
     public static IApplicationBuilder MapAggregateEndpoints(this IApplicationBuilder app)
     {
         app.Map("/aggregate/engagement/stores-with-images", aggregateApp =>
@@ -31,27 +32,13 @@ public static class AggregateActions
 
     private static async Task AggregateProductWithImages(HttpContext context)
     {
-        if (!HttpMethods.IsGet(context.Request.Method))
+        if (!EnsureGetAndAuthenticated(context))
         {
-            context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
             return;
         }
 
-        if (context.User?.Identity?.IsAuthenticated != true)
-        {
-            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-            return;
-        }
-
-        var jsonOptions = new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            PropertyNameCaseInsensitive = true
-        };
-
-        var services = context.RequestServices;
-        var httpClientFactory = services.GetRequiredService<IHttpClientFactory>();
-        var config = services.GetRequiredService<IConfiguration>();
+        var jsonOptions = CreateJsonOptions();
+        var (httpClientFactory, config) = GetServices(context);
 
         var catalogClient = httpClientFactory.CreateClient("CatalogService");
         var productPath = config["CatalogService:ProductPath"];
@@ -61,11 +48,7 @@ public static class AggregateActions
         var requestPath = productPath + storeId;
 
         using var catalogRequest = new HttpRequestMessage(HttpMethod.Get, requestPath);
-
-        if (context.Request.Headers.TryGetValue("Authorization", out var authHeader))
-        {
-            catalogRequest.Headers.TryAddWithoutValidation("Authorization", authHeader.ToString());
-        }
+        CopyAuthorizationHeader(context, catalogRequest);
 
         using var catalogResponse = await catalogClient.SendAsync(catalogRequest, context.RequestAborted);
         if (!catalogResponse.IsSuccessStatusCode)
@@ -84,29 +67,12 @@ public static class AggregateActions
             .Distinct()
             .ToArray();
 
-        var imageMap = new Dictionary<int, string[]>();
-        if (masterIds?.Length > 0)
-        {
-            var fileClient = httpClientFactory.CreateClient("FileService");
-            var filePath = config["FileService:ImagesByMasterIdsPath"] ?? "/images/getByMasterIds";
-            using var fileRequest = new HttpRequestMessage(HttpMethod.Post, filePath)
-            {
-                Content = JsonContent.Create(new ImagesByIdsRequest(masterIds), options: jsonOptions)
-            };
-
-            if (context.Request.Headers.TryGetValue("Authorization", out authHeader))
-            {
-                fileRequest.Headers.TryAddWithoutValidation("Authorization", authHeader.ToString());
-            }
-
-            using var fileResponse = await fileClient.SendAsync(fileRequest, context.RequestAborted);
-            if (fileResponse.IsSuccessStatusCode)
-            {
-                var imageItems = await fileResponse.Content.ReadFromJsonAsync<List<ImageMasterDto>>(jsonOptions, context.RequestAborted)
-                                 ?? new List<ImageMasterDto>();
-                imageMap = imageItems.ToDictionary(x => x.MasterId, x => x.ImageUrls);
-            }
-        }
+        var imageMap = await LoadImagesByMasterIds(
+            context,
+            httpClientFactory,
+            config["FileService:ImagesByMasterIdsPath"],
+            masterIds,
+            jsonOptions);
 
         var result = products?.Select(product => new ProductDto
         {
@@ -130,36 +96,19 @@ public static class AggregateActions
 
     private static async Task AggregateStoresWithImages(HttpContext context)
     {
-        if (!HttpMethods.IsGet(context.Request.Method))
+        if (!EnsureGetAndAuthenticated(context))
         {
-            context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
             return;
         }
 
-        if (context.User?.Identity?.IsAuthenticated != true)
-        {
-            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-            return;
-        }
-
-        var jsonOptions = new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            PropertyNameCaseInsensitive = true
-        };
-
-        var services = context.RequestServices;
-        var httpClientFactory = services.GetRequiredService<IHttpClientFactory>();
-        var config = services.GetRequiredService<IConfiguration>();
+        var jsonOptions = CreateJsonOptions();
+        var (httpClientFactory, config) = GetServices(context);
 
         var engagementClient = httpClientFactory.CreateClient("EngagementService");
         var engagementPath = config["EngagementService:StoresPath"];
         using var storeRequest = new HttpRequestMessage(HttpMethod.Get, engagementPath);
 
-        if (context.Request.Headers.TryGetValue("Authorization", out var authHeader))
-        {
-            storeRequest.Headers.TryAddWithoutValidation("Authorization", authHeader.ToString());
-        }
+        CopyAuthorizationHeader(context, storeRequest);
 
         using var storeResponse = await engagementClient.SendAsync(storeRequest, context.RequestAborted);
         if (!storeResponse.IsSuccessStatusCode)
@@ -177,29 +126,12 @@ public static class AggregateActions
             .Distinct()
             .ToArray();
 
-        var imageMap = new Dictionary<int, string[]>();
-        if (masterIds.Length > 0)
-        {
-            var fileClient = httpClientFactory.CreateClient("FileService");
-            var filePath = config["FileService:ImagesByMasterIdsPath"] ?? "/images/getByMasterIds";
-            using var fileRequest = new HttpRequestMessage(HttpMethod.Post, filePath)
-            {
-                Content = JsonContent.Create(new ImagesByIdsRequest(masterIds), options: jsonOptions)
-            };
-
-            if (context.Request.Headers.TryGetValue("Authorization", out authHeader))
-            {
-                fileRequest.Headers.TryAddWithoutValidation("Authorization", authHeader.ToString());
-            }
-
-            using var fileResponse = await fileClient.SendAsync(fileRequest, context.RequestAborted);
-            if (fileResponse.IsSuccessStatusCode)
-            {
-                var imageItems = await fileResponse.Content.ReadFromJsonAsync<List<ImageMasterDto>>(jsonOptions, context.RequestAborted)
-                                 ?? new List<ImageMasterDto>();
-                imageMap = imageItems.ToDictionary(x => x.MasterId, x => x.ImageUrls);
-            }
-        }
+        var imageMap = await LoadImagesByMasterIds(
+            context,
+            httpClientFactory,
+            config["FileService:ImagesByMasterIdsPath"],
+            masterIds,
+            jsonOptions);
 
         var result = stores.Select(store => new StoreWithImagesDto
         {
@@ -221,27 +153,13 @@ public static class AggregateActions
 
     private static async Task AggregateBasketDetail(HttpContext context)
     {
-        if (!HttpMethods.IsGet(context.Request.Method))
+        if (!EnsureGetAndAuthenticated(context))
         {
-            context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
             return;
         }
 
-        if (context.User?.Identity?.IsAuthenticated != true)
-        {
-            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-            return;
-        }
-
-        var jsonOptions = new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            PropertyNameCaseInsensitive = true
-        };
-
-        var services = context.RequestServices;
-        var httpClientFactory = services.GetRequiredService<IHttpClientFactory>();
-        var config = services.GetRequiredService<IConfiguration>();
+        var jsonOptions = CreateJsonOptions();
+        var (httpClientFactory, config) = GetServices(context);
 
         var orgerManagementClient = httpClientFactory.CreateClient("OrderManagementService");
         var basketPath = config["OrderManagementService:BasketPath"];
@@ -253,10 +171,7 @@ public static class AggregateActions
 
         using var basketRequest = new HttpRequestMessage(HttpMethod.Get, requestPath);
 
-        if (context.Request.Headers.TryGetValue("Authorization", out var authHeader))
-        {
-            basketRequest.Headers.TryAddWithoutValidation("Authorization", authHeader.ToString());
-        }
+        CopyAuthorizationHeader(context, basketRequest);
 
         using var basketResponse = await orgerManagementClient.SendAsync(basketRequest, context.RequestAborted);
         if (!basketResponse.IsSuccessStatusCode)
@@ -286,12 +201,9 @@ public static class AggregateActions
                         );
 
             using var catalogRequest = new HttpRequestMessage(HttpMethod.Post, requestPath);
-            catalogRequest.Content = new StringContent(JsonSerializer.Serialize(productIds), Encoding.UTF8,"application/json");
+            catalogRequest.Content = new StringContent(JsonSerializer.Serialize(productIds), Encoding.UTF8, "application/json");
 
-            if (context.Request.Headers.TryGetValue("Authorization", out authHeader))
-            {
-                catalogRequest.Headers.TryAddWithoutValidation("Authorization", authHeader.ToString());
-            }
+            CopyAuthorizationHeader(context, catalogRequest);
 
             using var catalogResponse = await catalogClient.SendAsync(catalogRequest, context.RequestAborted);
 
@@ -311,38 +223,93 @@ public static class AggregateActions
                 .Distinct()
                 .ToArray();
 
-            var imageMap = new Dictionary<int, string[]>();
-            if (masterIds?.Length > 0)
-            {
-                var fileClient = httpClientFactory.CreateClient("FileService");
-                var filePath = config["FileService:ImagesByMasterIdsPath"];
-                using var fileRequest = new HttpRequestMessage(HttpMethod.Post, filePath)
-                {
-                    Content = JsonContent.Create(new ImagesByIdsRequest(masterIds), options: jsonOptions)
-                };
-
-                if (context.Request.Headers.TryGetValue("Authorization", out authHeader))
-                {
-                    fileRequest.Headers.TryAddWithoutValidation("Authorization", authHeader.ToString());
-                }
-
-                using var fileResponse = await fileClient.SendAsync(fileRequest, context.RequestAborted);
-                if (fileResponse.IsSuccessStatusCode)
-                {
-                    var imageItems = await fileResponse.Content.ReadFromJsonAsync<List<ImageMasterDto>>(jsonOptions, context.RequestAborted)
-                                     ?? new List<ImageMasterDto>();
-                    imageMap = imageItems.ToDictionary(x => x.MasterId, x => x.ImageUrls);
-                }
-            }
+            var imageMap = await LoadImagesByMasterIds(
+                context,
+                httpClientFactory,
+                config["FileService:ImagesByMasterIdsPath"],
+                masterIds,
+                jsonOptions);
 
 
-            var result = basket.Items?.Select(product => new ProductDto
-            {
-            });
+            var result = new BasketDetailDto();
+            result.UserId = basket.UserId;
+            result.StoreId = basket.StoreId;
+            result.BasketMasterId = basket.BasketMasterId;
+            result.DeliveryAddressId = basket.DeliveryAddressId;
+            result.Items = 
 
             context.Response.StatusCode = StatusCodes.Status200OK;
             await context.Response.WriteAsJsonAsync(result, jsonOptions, context.RequestAborted);
         }
+    }
+
+    private static bool EnsureGetAndAuthenticated(HttpContext context)
+    {
+        if (!HttpMethods.IsGet(context.Request.Method))
+        {
+            context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+            return false;
+        }
+
+        if (context.User?.Identity?.IsAuthenticated != true)
+        {
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            return false;
+        }
+
+        return true;
+    }
+
+    private static JsonSerializerOptions CreateJsonOptions() =>
+        new()
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            PropertyNameCaseInsensitive = true
+        };
+
+    private static (IHttpClientFactory HttpClientFactory, IConfiguration Config) GetServices(HttpContext context)
+    {
+        var services = context.RequestServices;
+        return (services.GetRequiredService<IHttpClientFactory>(), services.GetRequiredService<IConfiguration>());
+    }
+
+    private static void CopyAuthorizationHeader(HttpContext context, HttpRequestMessage request)
+    {
+        if (context.Request.Headers.TryGetValue(AuthorizationHeader, out var authHeader))
+        {
+            request.Headers.TryAddWithoutValidation(AuthorizationHeader, authHeader.ToString());
+        }
+    }
+
+    private static async Task<Dictionary<int, string[]>> LoadImagesByMasterIds(
+        HttpContext context,
+        IHttpClientFactory httpClientFactory,
+        string? filePath,
+        int[]? masterIds,
+        JsonSerializerOptions jsonOptions)
+    {
+        if (string.IsNullOrWhiteSpace(filePath) || masterIds?.Length > 0 != true)
+        {
+            return new Dictionary<int, string[]>();
+        }
+
+        var fileClient = httpClientFactory.CreateClient("FileService");
+        using var fileRequest = new HttpRequestMessage(HttpMethod.Post, filePath)
+        {
+            Content = JsonContent.Create(new ImagesByIdsRequest(masterIds), options: jsonOptions)
+        };
+
+        CopyAuthorizationHeader(context, fileRequest);
+
+        using var fileResponse = await fileClient.SendAsync(fileRequest, context.RequestAborted);
+        if (!fileResponse.IsSuccessStatusCode)
+        {
+            return new Dictionary<int, string[]>();
+        }
+
+        var imageItems = await fileResponse.Content.ReadFromJsonAsync<List<ImageMasterDto>>(jsonOptions, context.RequestAborted)
+                         ?? new List<ImageMasterDto>();
+        return imageItems.ToDictionary(x => x.MasterId, x => x.ImageUrls);
     }
 
     private static List<StoreDto> DeserializeStores(string json, JsonSerializerOptions options)
