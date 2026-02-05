@@ -230,13 +230,35 @@ public static class AggregateActions
                 masterIds,
                 jsonOptions);
 
+            var productMap = products?.ToDictionary(p => p.Id) ?? new Dictionary<int, ProductDto>();
+            var result = new BasketDetailDto
+            {
+                UserId = basket.UserId,
+                StoreId = basket.StoreId,
+                BasketMasterId = basket.BasketMasterId,
+                DeliveryAddressId = basket.DeliveryAddressId,
+                Items = basket.Items?
+                    .Select(item =>
+                    {
+                        productMap.TryGetValue(item.ProductId, out var product);
+                        var imageUrl = string.Empty;
+                        if (product != null && imageMap.TryGetValue(product.ImageMasterId, out var urls) && urls.Length > 0)
+                        {
+                            imageUrl = urls[0];
+                        }
 
-            var result = new BasketDetailDto();
-            result.UserId = basket.UserId;
-            result.StoreId = basket.StoreId;
-            result.BasketMasterId = basket.BasketMasterId;
-            result.DeliveryAddressId = basket.DeliveryAddressId;
-            result.Items = 
+                        return new BasketDetailItem
+                        {
+                            ProductId = item.ProductId,
+                            ProductName = product?.Name ?? string.Empty,
+                            ImageUrl = imageUrl,
+                            Quantity = item.Quantity,
+                            UnitType = item.UnitType,
+                            Weight = item.Weight
+                        };
+                    })
+                    .ToList() ?? new List<BasketDetailItem>()
+            };
 
             context.Response.StatusCode = StatusCodes.Status200OK;
             await context.Response.WriteAsJsonAsync(result, jsonOptions, context.RequestAborted);
