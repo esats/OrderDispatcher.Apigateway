@@ -83,6 +83,27 @@
         "AuthenticationProviderKey": "GatewayAuth",
         "AllowedScopes": []
       }
+    },
+    {
+      "DownstreamPathTemplate": "/api/order-management/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "localhost",
+          "Port": 5175
+        }
+      ],
+      "UpstreamPathTemplate": "/order-management/{everything}",
+      "UpstreamHttpMethod": [
+        "GET",
+        "POST",
+        "PUT",
+        "DELETE"
+      ],
+      "AuthenticationOptions": {
+        "AuthenticationProviderKey": "GatewayAuth",
+        "AllowedScopes": []
+      }
     }
   ],
   "GlobalConfiguration": {

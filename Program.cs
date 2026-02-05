@@ -74,6 +74,15 @@ builder.Services.AddHttpClient("CatalogService", client =>
     }
 });
 
+builder.Services.AddHttpClient("OrderManagementService", client =>
+{
+    var baseUrl = builder.Configuration["OrderManagementService:BaseUrl"];
+    if (!string.IsNullOrWhiteSpace(baseUrl))
+    {
+        client.BaseAddress = new Uri(baseUrl);
+    }
+});
+
 builder.Services.AddOcelot(builder.Configuration);
 
 var app = builder.Build();

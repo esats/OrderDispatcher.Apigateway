@@ -20,7 +20,7 @@ public sealed class StoreListResponseDto
 
 public sealed class StoreWithImagesDto
 {
-    public string UserId { get; set; } = string.Empty;
+    public string StoreId { get; set; } = string.Empty;
     public string? FirstName { get; set; }
     public string? LastName { get; set; }
     public string? PhoneNumber { get; set; }
