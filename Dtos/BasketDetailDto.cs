@@ -17,5 +17,7 @@
         public int Quantity { get; set; }
         public int UnitType { get; set; }
         public decimal Weight { get; set; } = 0;
+        public decimal ProductPrice { get; set; }
     }
 }
+

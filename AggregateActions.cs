@@ -254,6 +254,7 @@ public static class AggregateActions
                             ImageUrl = imageUrl,
                             Quantity = item.Quantity,
                             UnitType = item.UnitType,
+                            ProductPrice = item.ProductPrice,
                             Weight = item.Weight
                         };
                     })
