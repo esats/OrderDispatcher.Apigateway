@@ -29,3 +29,6 @@ public sealed class StoreWithImagesDto
     public int ImageMasterId { get; set; }
     public string[] ImageUrls { get; set; } = Array.Empty<string>();
 }
+
+
+public record StoresByIdsRequest(IReadOnlyList<string> StoreIds);

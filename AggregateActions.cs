@@ -27,6 +27,11 @@ public static class AggregateActions
             aggregateApp.Run(AggregateBasketDetail);
         });
 
+        app.Map("/aggregate/order-management/orders", aggregateApp =>
+        {
+            aggregateApp.Run(AggregateOrders);
+        });
+
         return app;
     }
 
@@ -266,6 +271,81 @@ public static class AggregateActions
         }
     }
 
+    private static async Task AggregateOrders(HttpContext context)
+    {
+        if (!EnsureGetAndAuthenticated(context))
+        {
+            return;
+        }
+
+        var jsonOptions = CreateJsonOptions();
+        var (httpClientFactory, config) = GetServices(context);
+
+        var orgerManagementClient = httpClientFactory.CreateClient("OrderManagementService");
+        var orderPath = config["OrderManagementService:OrderPath"];
+
+        using var orderRequest = new HttpRequestMessage(HttpMethod.Get, orderPath);
+
+        CopyAuthorizationHeader(context, orderRequest);
+
+        using var orderResponse = await orgerManagementClient.SendAsync(orderRequest, context.RequestAborted);
+        if (!orderResponse.IsSuccessStatusCode)
+        {
+            context.Response.StatusCode = (int)orderResponse.StatusCode;
+            return;
+        }
+
+        var res = await orderResponse.Content.ReadAsStringAsync(context.RequestAborted);
+        var orders = JsonSerializer.Deserialize<List<OrderDetail>>(res, jsonOptions);
+        var storeIds = orders
+            .Select(s => s.StoreId)
+            .Distinct()
+            .ToArray();
+
+        var stores = await GetStoresProfile(
+              context,
+              httpClientFactory,
+              config["EngagementService:GetStoresProfile"],
+              storeIds,
+              jsonOptions);
+
+        var masterIds = stores
+            .Select(s => s.ImageMasterId)
+            .Where(id => id > 0)
+            .Distinct()
+            .ToArray();
+
+        var imageMap = await LoadImagesByMasterIds(
+            context,
+            httpClientFactory,
+            config["FileService:ImagesByMasterIdsPath"],
+            masterIds,
+            jsonOptions);
+
+        var result = orders.Select(order => new OrderDetail
+        {
+            Id = order.Id,
+            StoreId = order.StoreId,
+            StoreName = stores.FirstOrDefault(x => x.UserId == order.StoreId).FirstName,
+            StoreImageUrl = imageMap.TryGetValue(stores.FirstOrDefault(x => x.UserId == order.StoreId).ImageMasterId, out var urls)
+                ? urls[0]
+                : "",
+            Tip = order.Tip,
+            Total = order.Total,
+            ServiceFee = order.ServiceFee,
+            Subtotal = order.Subtotal,
+            AssignedAtUtc = order.AssignedAtUtc,
+            BasketMasterId = order.BasketMasterId,
+            CustomerId = order.CustomerId,
+            DeliveryFee = order.DeliveryFee,
+            Notes = order.Notes,
+            ShopperId = order.ShopperId,
+            Status = order.Status,
+        });
+
+        context.Response.StatusCode = StatusCodes.Status200OK;
+        await context.Response.WriteAsJsonAsync(result, jsonOptions, context.RequestAborted);
+    }
     private static bool EnsureGetAndAuthenticated(HttpContext context)
     {
         if (!HttpMethods.IsGet(context.Request.Method))
@@ -282,7 +362,6 @@ public static class AggregateActions
 
         return true;
     }
-
     private static JsonSerializerOptions CreateJsonOptions() =>
         new()
         {
@@ -334,6 +413,31 @@ public static class AggregateActions
                          ?? new List<ImageMasterDto>();
         return imageItems.ToDictionary(x => x.MasterId, x => x.ImageUrls);
     }
+
+    private static async Task<List<StoreDto>> GetStoresProfile(
+        HttpContext context,
+        IHttpClientFactory httpClientFactory,
+        string? storePath,
+        string[]? storeIds,
+        JsonSerializerOptions jsonOptions)
+    {
+        var engagementClient = httpClientFactory.CreateClient("EngagementService");
+        using var storeRequest = new HttpRequestMessage(HttpMethod.Post, storePath)
+        {
+            Content = JsonContent.Create(storeIds, options: jsonOptions)
+        };
+
+        CopyAuthorizationHeader(context, storeRequest);
+
+        using var storeResponse = await engagementClient.SendAsync(storeRequest, context.RequestAborted);
+        if (!storeResponse.IsSuccessStatusCode)
+        {
+            return new List<StoreDto>();
+        }
+
+        return await storeResponse.Content.ReadFromJsonAsync<List<StoreDto>>(jsonOptions, context.RequestAborted);
+    }
+
 
     private static List<StoreDto> DeserializeStores(string json, JsonSerializerOptions options)
     {
