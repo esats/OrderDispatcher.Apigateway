@@ -16,3 +16,9 @@ public class OrderDetail
     public decimal? Total { get; set; }
     public string? Notes { get; set; }
 }
+
+public class OrderGetAllResponse
+{
+    public string CustomerId { get; set; }
+    public List<OrderDetail> Orders { get; set; } = new();
+}

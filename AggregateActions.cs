@@ -32,6 +32,11 @@ public static class AggregateActions
             aggregateApp.Run(AggregateOrders);
         });
 
+        app.Map("/aggregate/order-management/customerOrders", aggregateApp =>
+        {
+            aggregateApp.Run(AggregateCustomerOrders);
+        });
+
         return app;
     }
 
@@ -345,6 +350,95 @@ public static class AggregateActions
 
         context.Response.StatusCode = StatusCodes.Status200OK;
         await context.Response.WriteAsJsonAsync(result, jsonOptions, context.RequestAborted);
+    }
+
+    private static async Task AggregateCustomerOrders(HttpContext context)
+    {
+        if (!EnsureGetAndAuthenticated(context))
+        {
+            return;
+        }
+
+        var jsonOptions = CreateJsonOptions();
+        var (httpClientFactory, config) = GetServices(context);
+
+        var orgerManagementClient = httpClientFactory.CreateClient("OrderManagementService");
+        var orderPath = config["OrderManagementService:CustomerOrderPath"];
+        var customerId = context.Request.Query["customerId"].FirstOrDefault();
+
+        if (!string.IsNullOrWhiteSpace(customerId))
+        {
+            orderPath = QueryHelpers.AddQueryString(orderPath!, "customerId", customerId);
+        }
+
+        using var orderRequest = new HttpRequestMessage(HttpMethod.Get, orderPath);
+
+        CopyAuthorizationHeader(context, orderRequest);
+
+        using var orderResponse = await orgerManagementClient.SendAsync(orderRequest, context.RequestAborted);
+        if (!orderResponse.IsSuccessStatusCode)
+        {
+            context.Response.StatusCode = (int)orderResponse.StatusCode;
+            return;
+        }
+
+        var res = await orderResponse.Content.ReadAsStringAsync(context.RequestAborted);
+        var orderResponseModel = JsonSerializer.Deserialize<OrderGetAllResponse>(res, jsonOptions) ?? new OrderGetAllResponse();
+        var orders = orderResponseModel.Orders ?? new List<OrderDetail>();
+        var storeIds = orders
+            .Select(s => s.StoreId)
+            .Distinct()
+            .ToArray();
+
+        var stores = await GetStoresProfile(
+              context,
+              httpClientFactory,
+              config["EngagementService:GetStoresProfile"],
+              storeIds,
+              jsonOptions);
+
+        var masterIds = stores
+            .Select(s => s.ImageMasterId)
+            .Where(id => id > 0)
+            .Distinct()
+            .ToArray();
+
+        var imageMap = await LoadImagesByMasterIds(
+            context,
+            httpClientFactory,
+            config["FileService:ImagesByMasterIdsPath"],
+            masterIds,
+            jsonOptions);
+
+        var result = orders.Select(order => new OrderDetail
+        {
+            Id = order.Id,
+            StoreId = order.StoreId,
+            StoreName = stores.FirstOrDefault(x => x.UserId == order.StoreId).FirstName,
+            StoreImageUrl = imageMap.TryGetValue(stores.FirstOrDefault(x => x.UserId == order.StoreId).ImageMasterId, out var urls)
+                ? urls[0]
+                : "",
+            Tip = order.Tip,
+            Total = order.Total,
+            ServiceFee = order.ServiceFee,
+            Subtotal = order.Subtotal,
+            AssignedAtUtc = order.AssignedAtUtc,
+            BasketMasterId = order.BasketMasterId,
+            CustomerId = order.CustomerId,
+            DeliveryFee = order.DeliveryFee,
+            Notes = order.Notes,
+            ShopperId = order.ShopperId,
+            Status = order.Status,
+        });
+
+        var aggregateResponse = new OrderGetAllResponse
+        {
+            CustomerId = orderResponseModel.CustomerId,
+            Orders = result.ToList()
+        };
+
+        context.Response.StatusCode = StatusCodes.Status200OK;
+        await context.Response.WriteAsJsonAsync(aggregateResponse, jsonOptions, context.RequestAborted);
     }
     private static bool EnsureGetAndAuthenticated(HttpContext context)
     {
